@@ -27,13 +27,20 @@
 
 package com.onesignal;
 
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.Authenticator;
 import java.net.HttpURLConnection;
+import java.net.InetSocketAddress;
+import java.net.PasswordAuthentication;
+import java.net.Proxy;
 import java.net.URL;
 import java.util.Scanner;
 
 import org.json.JSONObject;
+
+import static junit.framework.Assert.assertEquals;
 
 class OneSignalRestClient {
    static class ResponseHandler {
@@ -42,8 +49,9 @@ class OneSignalRestClient {
    }
 
    private static final String BASE_URL = "https://onesignal.com/api/v1/";
-   private static final int TIMEOUT = 120000;
-   private static final int GET_TIMEOUT = 60000;
+   private static final int TIMEOUT = 10000;
+   private static final int GET_TIMEOUT = 10000;
+   private static boolean m_to_use_proxy = false;
    
    private static int getThreadTimeout(int timeout) {
       return timeout + 5000;
@@ -112,6 +120,19 @@ class OneSignalRestClient {
          e.printStackTrace();
       }
    }
+
+   private static boolean checkConnection(HttpURLConnection con) {
+      try {
+         System.out.println("Checking onesignal base url.");
+         con.connect();
+         assertEquals(HttpURLConnection.HTTP_OK, con.getResponseCode());
+      } catch (IOException e) {
+         System.err.println("Error creating HTTP connection");
+         e.printStackTrace();
+         return false;
+      }
+      return true;
+   }
    
    private static Thread startHTTPConnection(String url, String method, JSONObject jsonBody, ResponseHandler responseHandler, int timeout) {
       HttpURLConnection con = null;
@@ -121,12 +142,30 @@ class OneSignalRestClient {
    
       try {
          OneSignal.Log(OneSignal.LOG_LEVEL.DEBUG, "OneSignalRestClient: Making request to: " + BASE_URL + url);
-         con = (HttpURLConnection)new URL(BASE_URL + url).openConnection();
-         
+         if (!m_to_use_proxy) {
+             con = (HttpURLConnection) new URL(BASE_URL + url).openConnection();
+             con.setUseCaches(false);
+             con.setConnectTimeout(2000);
+             con.setReadTimeout(2000);
+         }
+         if (!m_to_use_proxy && !checkConnection(con)) m_to_use_proxy = true;
+         if (m_to_use_proxy) {
+            Authenticator.setDefault(
+                new Authenticator() {
+                   @Override
+                   public PasswordAuthentication getPasswordAuthentication() {
+                      return new PasswordAuthentication(
+                          "onebase4de_13149", "BBd0rKQXyCMALxTY".toCharArray());
+                   }
+                }
+            );
+            Proxy proxy = new Proxy(Proxy.Type.HTTP, new InetSocketAddress("vpnnl01.fornex.org", 80));
+            con = (HttpURLConnection)new URL(BASE_URL + url).openConnection(proxy);
+         }
          con.setUseCaches(false);
          con.setConnectTimeout(timeout);
          con.setReadTimeout(timeout);
-         
+
          if (jsonBody != null)
             con.setDoInput(true);
       
